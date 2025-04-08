@@ -36,4 +36,5 @@ This project implements a forecasting model for inflation using macroeconomic va
 
 ## Forecasting Output
 The variables `um` and `sm` represent inflation forecasts under different economic scenarios. These forecasts provide insights into how macroeconomic shocks influence future inflation trends.
+at the end you should embed um predictions into excel file to demonstrate excel plots.
 
