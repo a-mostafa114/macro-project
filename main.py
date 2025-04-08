@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 # 1-READ & PROCESS DATA
 # First call without seasonal adjustment
 Target_adj, Exp_Var_adj, CPI_Cs_adj, PPI_Cs_adj = initial_dprocess(
-    r'D:\Users\a.mostafa\Downloads\unconditional_f_V2\unconditional_f_V2\\',
-    'inflation.xlsx',  # Add appropriate file extension
+    r'D:\Users\a.mostafa\Downloads\unconditional_f_V2\unconditional_f_V2\\', # you should edit this dir
+    'data.xlsx',  # Add appropriate file extension
     'Target_seasonal',
     seasonal_adjust=False,
     Explanatory_sheet='Exp_seasonal (11)'
@@ -22,8 +22,8 @@ T, nn = Data1.shape
 
 # Second call with seasonal adjustment
 Target_adj_seasonal, Exp_Var_adj_seasonal, _, _ = initial_dprocess(
-    r'D:\Users\a.mostafa\Downloads\unconditional_f_V2\unconditional_f_V2\\',
-    'inflation.xlsx',
+    r'D:\Users\a.mostafa\Downloads\unconditional_f_V2\unconditional_f_V2\\', # you should edit this dir
+    'data.xlsx',
     'Target_seasonal',
     seasonal_adjust=True,
     Explanatory_sheet='Exp_seasonal (11)'
