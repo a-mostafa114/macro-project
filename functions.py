@@ -151,68 +151,120 @@ def initial_dprocess(file_address, xls_name, Target_sheet, seasonal_adjust,
 
 
 
-
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.api import VAR, SVAR
-from statsmodels.tsa.base.datetools import dates_from_str
-from scipy.linalg import cholesky
+from statsmodels.tsa.api import VAR
+# from statsmodels.tsa.vector_ar.svar_model import SVAR  # if structural VAR estimation is needed
 
 def cf_var_doan(data, num_maxlag, cf, var_cons=None):
-    # data: T x nn numpy array
-    # cf: num_step x nn numpy array with NaNs for unrestricted periods
-    # var_cons: nn x nn matrix with constraints (NaN for unconstrained)
-    T, nn = data.shape
-    num_step, nn3 = cf.shape
-
+    """
+    Conditional forecast calculation based on Doan, Litterman and Sims (1984)
+    
+    Parameters:
+      data      : NumPy array of shape (T, n) with historical data.
+      num_maxlag: Integer; the number of lags in the VAR model.
+      cf        : NumPy array of shape (num_steps, n). Its cells are np.nan except those 
+                  positions where a conditional scenario is provided.
+      var_cons  : NumPy array (n x n) containing restrictions for VAR coefficients.
+                  Positions with np.nan are unconstrained. If a cell equals 0 this signifies 
+                  that all lags of the corresponding variable do not affect the equation.
+                  
+    Returns:
+      su_cforecast: Conditional forecast (unrestricted VAR version) as a DataFrame.
+      sc_cforecast: Conditional forecast (restricted/SVAR version) as a DataFrame.
+      
+    Notes:
+      - The original MATLAB code requires the IRIS toolbox functions such as `dboverlay` to overlay
+        historical levels on the forecasts. Here we use a placeholder function.
+      - The estimation of an SVAR with coefficient constraints is not implemented because no 
+        direct analogue exists in standard Python packages.
+      - The conditional forecasting routine (passing a scenario) is not natively supported in statsmodels.
+      
+    """
+    # Determine dimensions
+    T, n = data.shape
+    num_steps = cf.shape[0]
+    
+    # If no restrictions provided, set var_cons to an n x n matrix of NaNs.
     if var_cons is None:
-        var_cons = np.full((nn, nn), np.nan)
-    else:
-        nn2, nn1 = var_cons.shape
-        if nn != nn1 or nn != nn2 or nn != nn3:
-            raise ValueError("Dimensions of data, cf, and var_cons must match")
+        var_cons = np.full((n, n), np.nan)
     
-    # Create DataFrame with quarterly dates starting from 1969Q1
-    dates = pd.period_range(start='1969Q1', periods=T, freq='Q')
-    df = pd.DataFrame(data, index=dates, columns=[f'V_{i+1}' for i in range(nn)])
+    # Check consistency of dimensions
+    if cf.shape[1] != n or var_cons.shape != (n, n):
+        raise ValueError("The number of columns in cf, and the shape of var_cons, must match the number of columns in data.")
     
-    # Estimate unrestricted VAR
-    model_unrestricted = VAR(df)
-    results_unrestricted = model_unrestricted.fit(num_maxlag, trend='c')
+    # Create variable names V_1, V_2, ... V_n
+    var_names = [f'V_{i+1}' for i in range(n)]
     
-    # Estimate restricted VAR
-    # This part is simplified and assumes constraints are to exclude variables
-    # For more complex constraints, a custom approach is needed
-    restricted_data = df.copy()
-    # Placeholder for constrained estimation; replace with actual constrained estimation logic
-    model_restricted = VAR(restricted_data)
-    results_restricted = model_restricted.fit(num_maxlag, trend='c')  # This doesn't apply constraints
+    # Define a time index similar to MATLAB's quarterly periods
+    # For example, starting from 1969-Q1 until (T + num_steps) quarters later.
+    start_period = pd.Period('1969Q1', freq='Q')
+    periods = T + num_steps
+    time_index = pd.period_range(start=start_period, periods=periods, freq='Q')
     
-    # Structural VAR with Cholesky decomposition
-    # Unrestricted SVAR
-    sigma_u = results_unrestricted.sigma_u
-    B0 = cholesky(sigma_u, lower=True)
+    # Historical data
+    hist_index = time_index[:T]
+    forecast_index = time_index[T:]
     
-    # Restricted SVAR (placeholder, assuming same covariance)
-    sigma_r = results_restricted.sigma_u
-    B1 = cholesky(sigma_r, lower=True)
+    # Create a DataFrame for the historical data with proper variable names
+    df_hist = pd.DataFrame(data, index=hist_index, columns=var_names)
     
-    # Forecast preparation
-    start_forecast = df.index[-1] + 1  # Next period
-    forecast_steps = num_step
+    #%% Step 1. Estimate a simple (unrestricted) VAR model with constant
+    model = VAR(df_hist)
+    results = model.fit(num_maxlag, trend='c')
     
-    # Unconditional forecast
-    u0_forecast = results_unrestricted.forecast(df.values[-num_maxlag:], forecast_steps)
-    u1_forecast = results_restricted.forecast(df.values[-num_maxlag:], forecast_steps)
+    #%% (Optional) SVAR estimation with restrictions would require additional routines.
+    # In MATLAB, the code creates a constraint array for each lag (constrA)
+    # and then uses estimate(..., 'A=', constrA) together with SVAR(...,'method=','chol').
+    # Python's statsmodels provides SVAR but does not support placing coefficient restrictions 
+    # in the same manner. One would need to implement a custom estimator here.
+    #
+    # Placeholder: We assume that a restricted estimation would yield an alternative set
+    # of model results. For now, we use the same 'results' object for both forecasts.
+    results_restricted = results  # This is only a placeholder!
     
-    # Conditional forecast (simplified placeholder)
-    # This part requires solving for shocks that meet the conditions, which is non-trivial
-    # Here, we'll return the unconditional forecasts as placeholders
-    su_cforecast = u0_forecast
-    sc_cforecast = u1_forecast
+    #%% Step 2. Unconditional forecasts (for both the unrestricted and the restricted models)
+    forecast_unrestricted = results.forecast(df_hist.values[-num_maxlag:], steps=num_steps)
+    # The forecasts are returned as a NumPy array; convert to DataFrame.
+    fc_unrestricted = pd.DataFrame(forecast_unrestricted, index=forecast_index, columns=var_names)
     
-    return su_cforecast, sc_cforecast
+    forecast_restricted = results_restricted.forecast(df_hist.values[-num_maxlag:], steps=num_steps)
+    fc_restricted = pd.DataFrame(forecast_restricted, index=forecast_index, columns=var_names)
+    
+    #%% Step 3. Conditional Forecasting
+    # In the MATLAB code, a scenario structure (j1) is built where each series with a non-NaN
+    # column in 'cf' is replaced by the provided scenario values.
+    #
+    # Python does not include a built-in routine for conditional forecasting of VAR/SVAR models.
+    # A custom implementation may involve iteratively solving a system of equations to impose
+    # the conditional values. Here, we outline a simple adjustment based on replacing the 
+    # corresponding forecast series values.
+    
+    # Create DataFrame for the scenario
+    df_cf = pd.DataFrame(cf, index=forecast_index, columns=var_names)
+    
+    # The following overlay routine is a placeholder for IRIS's dboverlay.
+    # For simplicity, we assume that if a conditional value is provided (not NaN),
+    # we replace the model’s forecast with that value.
+    def dboverlay(forecast_df, conditional_df):
+        """Overlay forecast_df with non-NaN values from conditional_df."""
+        overlaid = forecast_df.copy()
+        for col in forecast_df.columns:
+            cond_vals = conditional_df[col]
+            # Replace values only where the conditional forecast is provided.
+            overlaid[col] = np.where(~cond_vals.isna(), cond_vals, forecast_df[col])
+        return overlaid
 
+    # Create conditional forecasts by overlaying the scenarios on unconditional forecasts.
+    fc_unrestricted_cond = dboverlay(fc_unrestricted, df_cf)
+    fc_restricted_cond   = dboverlay(fc_restricted, df_cf)
+    
+    # The MATLAB code then extracts the last num_steps observations 
+    # (here they already correspond to the forecast period)
+    su_cforecast = fc_unrestricted_cond.copy()
+    sc_cforecast = fc_restricted_cond.copy()
+
+    return su_cforecast, sc_cforecast
 # Example usage:
 # data = np.random.randn(100, 3)  # 100 periods, 3 variables
 # num_maxlag = 2

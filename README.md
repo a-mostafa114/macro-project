@@ -35,6 +35,5 @@ This project implements a forecasting model for inflation using macroeconomic va
    - Forecasts inflation under each scenario.
 
 ## Forecasting Output
-The variables `um` and `sm` represent inflation forecasts under different economic scenarios. These forecasts provide insights into how macroeconomic shocks influence future inflation trends.
-at the end you should embed um predictions into excel file to demonstrate excel plots.
+To run exact matlab functionalities enter `python main_matlab_engine.py` and to run python-implemented run `python main.py`
 
